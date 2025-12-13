@@ -2,6 +2,10 @@
 pandas
 requests
 
+# Async
+aiohttp
+aiofiles
+
 # Dashboard
 streamlit
 
