@@ -359,6 +359,61 @@ def main():
                     f"{selected_sub}_posts.json",
                     "application/json"
                 )
+        
+        st.divider()
+        
+        # Media Export
+        st.subheader("🖼️ Media Export")
+        
+        media_dir = Path(f"data/{selected_sub}/media")
+        if media_dir.exists():
+            images_dir = media_dir / "images"
+            videos_dir = media_dir / "videos"
+            
+            images = list(images_dir.glob("*")) if images_dir.exists() else []
+            videos = list(videos_dir.glob("*")) if videos_dir.exists() else []
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📷 Images", len(images))
+            with col2:
+                st.metric("🎬 Videos", len(videos))
+            with col3:
+                total_size = sum(f.stat().st_size for f in images + videos) / (1024 * 1024)
+                st.metric("💾 Total Size", f"{total_size:.1f} MB")
+            
+            if images or videos:
+                if st.button("📦 Download All Media (ZIP)"):
+                    import zipfile
+                    import io
+                    
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                        for img in images:
+                            zf.write(img, f"images/{img.name}")
+                        for vid in videos:
+                            zf.write(vid, f"videos/{vid.name}")
+                    
+                    st.download_button(
+                        "💾 Download ZIP",
+                        zip_buffer.getvalue(),
+                        f"{selected_sub}_media.zip",
+                        "application/zip"
+                    )
+                    st.success(f"✅ ZIP ready: {len(images)} images, {len(videos)} videos")
+                
+                # Preview recent images
+                if images:
+                    st.write("**Recent Images:**")
+                    preview_cols = st.columns(min(5, len(images)))
+                    for i, img in enumerate(images[:5]):
+                        with preview_cols[i]:
+                            try:
+                                st.image(str(img), width=100)
+                            except:
+                                st.text(img.name[:15])
+        else:
+            st.info(f"No media found for {selected_sub}. Run with `--mode full` to download media.")
     
     with tab6:
         st.header("📋 Job History")
