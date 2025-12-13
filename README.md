@@ -4,6 +4,8 @@
 
 A **full-featured** Reddit scraper suite with analytics dashboard, sentiment analysis, scheduled scraping, notifications, and more!
 
+<img width="2558" height="1331" alt="image" src="https://github.com/user-attachments/assets/180b89ce-db02-4cd2-922d-aa3d1b8eeda7" />
+
 ## ✨ Features
 
 | Feature | Description |
