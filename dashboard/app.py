@@ -511,7 +511,6 @@ def main():
                 st.info(f"Run: `python main.py --export-parquet {export_sub.replace('r_', '').replace('u_', '')}`")
         
         # List existing parquet files
-        from pathlib import Path
         parquet_dir = Path("data/parquet")
         if parquet_dir.exists():
             parquet_files = list(parquet_dir.glob("*.parquet"))
