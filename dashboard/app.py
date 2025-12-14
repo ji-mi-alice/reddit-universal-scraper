@@ -325,15 +325,64 @@ def main():
         no_comments = st.checkbox("Skip comments")
         
         if st.button("🚀 Start Scraping"):
-            st.info(f"Run this command in terminal:")
-            cmd = f"python main.py {new_sub} --mode {mode} --limit {limit}"
-            if is_user:
-                cmd += " --user"
-            if no_media:
-                cmd += " --no-media"
-            if no_comments:
-                cmd += " --no-comments"
-            st.code(cmd)
+            if not new_sub:
+                st.error("Please enter a subreddit/user name!")
+            else:
+                # Build command
+                cmd = ["python", "main.py", new_sub, "--mode", mode, "--limit", str(limit)]
+                if is_user:
+                    cmd.append("--user")
+                if no_media:
+                    cmd.append("--no-media")
+                if no_comments:
+                    cmd.append("--no-comments")
+                
+                st.info(f"Running: {' '.join(cmd)}")
+                
+                # Run the scraper
+                import subprocess
+                
+                output_container = st.empty()
+                progress_bar = st.progress(0)
+                
+                try:
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                        cwd=str(Path(__file__).parent.parent)
+                    )
+                    
+                    output_lines = []
+                    for line in iter(process.stdout.readline, ''):
+                        output_lines.append(line)
+                        # Keep last 20 lines for display
+                        display_text = ''.join(output_lines[-20:])
+                        output_container.code(display_text, language="text")
+                        
+                        # Update progress based on output
+                        if "Progress:" in line:
+                            try:
+                                parts = line.split("/")
+                                current = int(parts[0].split()[-1])
+                                total = int(parts[1].split()[0])
+                                progress_bar.progress(min(current / total, 1.0))
+                            except:
+                                pass
+                    
+                    process.wait()
+                    progress_bar.progress(1.0)
+                    
+                    if process.returncode == 0:
+                        st.success("✅ Scraping completed! Refresh the page to see new data.")
+                        st.balloons()
+                    else:
+                        st.error(f"❌ Scraping failed with code {process.returncode}")
+                        
+                except Exception as e:
+                    st.error(f"Error running scraper: {e}")
         
         st.divider()
         
