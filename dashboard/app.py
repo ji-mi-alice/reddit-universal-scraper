@@ -163,7 +163,7 @@ def main():
         st.subheader("🔥 Top Posts by Score")
         if 'score' in posts_df:
             top_posts = posts_df.nlargest(10, 'score')[['title', 'score', 'num_comments', 'post_type', 'created_utc']]
-            st.dataframe(top_posts, use_container_width=True)
+            st.dataframe(top_posts)
     
     with tab2:
         st.header("📈 Analytics")
@@ -269,7 +269,7 @@ def main():
             filtered = filtered.sort_values(sort_by, ascending=False)
             
             st.write(f"Found {len(filtered)} results")
-            st.dataframe(filtered[['title', 'score', 'num_comments', 'post_type', 'author', 'created_utc']].head(50), use_container_width=True)
+            st.dataframe(filtered[['title', 'score', 'num_comments', 'post_type', 'author', 'created_utc']].head(50))
     
     with tab4:
         st.header("💬 Comments Analysis")
@@ -568,7 +568,7 @@ def main():
                 display_cols = ['job_id', 'target', 'mode', 'status', 'posts_scraped', 
                                'comments_scraped', 'duration_seconds', 'started_at', 'dry_run']
                 display_cols = [c for c in display_cols if c in jobs_df.columns]
-                st.dataframe(jobs_df[display_cols], use_container_width=True)
+                st.dataframe(jobs_df[display_cols])
                 
                 # Success rate chart
                 st.subheader("Success Rate")
