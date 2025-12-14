@@ -365,17 +365,18 @@ def main():
                     import os
                     env = os.environ.copy()
                     env['PYTHONIOENCODING'] = 'utf-8'
+                    env['PYTHONUNBUFFERED'] = '1'  # Force unbuffered output
+                    
+                    # Use -u flag for unbuffered Python output
+                    cmd_with_unbuffered = ["python", "-u"] + cmd[1:]  # Replace python with python -u
                     
                     process = subprocess.Popen(
-                        cmd,
+                        cmd_with_unbuffered,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
-                        text=True,
-                        bufsize=1,
+                        bufsize=0,  # Unbuffered
                         cwd=str(Path(__file__).parent.parent),
-                        env=env,
-                        encoding='utf-8',
-                        errors='replace'
+                        env=env
                     )
                     
                     output_lines = []
@@ -385,9 +386,11 @@ def main():
                     images_count = 0
                     videos_count = 0
                     
-                    for line in iter(process.stdout.readline, ''):
-                        if not line:
+                    for raw_line in iter(process.stdout.readline, b''):
+                        if not raw_line:
                             break
+                        # Decode binary to text
+                        line = raw_line.decode('utf-8', errors='replace')
                         output_lines.append(line)
                         
                         # Parse metrics from output
