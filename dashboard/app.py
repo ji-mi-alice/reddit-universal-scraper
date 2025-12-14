@@ -341,9 +341,25 @@ def main():
                 
                 # Run the scraper
                 import subprocess
+                import time
                 
-                output_container = st.empty()
+                # Create status displays
+                status_container = st.empty()
+                
+                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                posts_metric = col_m1.empty()
+                comments_metric = col_m2.empty()
+                images_metric = col_m3.empty()
+                videos_metric = col_m4.empty()
+                
                 progress_bar = st.progress(0)
+                output_container = st.empty()
+                
+                # Initialize metrics
+                posts_metric.metric("📊 Posts", "0")
+                comments_metric.metric("💬 Comments", "0")
+                images_metric.metric("🖼️ Images", "0")
+                videos_metric.metric("🎬 Videos", "0")
                 
                 try:
                     import os
@@ -363,33 +379,74 @@ def main():
                     )
                     
                     output_lines = []
+                    start_time = time.time()
+                    posts_count = 0
+                    comments_count = 0
+                    images_count = 0
+                    videos_count = 0
+                    
                     for line in iter(process.stdout.readline, ''):
+                        if not line:
+                            break
                         output_lines.append(line)
-                        # Keep last 20 lines for display
-                        display_text = ''.join(output_lines[-20:])
-                        output_container.code(display_text, language="text")
                         
-                        # Update progress based on output
+                        # Parse metrics from output
                         if "Progress:" in line:
                             try:
                                 parts = line.split("/")
-                                current = int(parts[0].split()[-1])
+                                posts_count = int(parts[0].split()[-1])
                                 total = int(parts[1].split()[0])
-                                progress_bar.progress(min(current / total, 1.0))
+                                progress_bar.progress(min(posts_count / total, 1.0))
+                                posts_metric.metric("📊 Posts", f"{posts_count}/{total}")
                             except:
                                 pass
+                        
+                        if "Comments:" in line:
+                            try:
+                                comments_count = int(line.split("Comments:")[-1].strip().split()[0])
+                                comments_metric.metric("💬 Comments", str(comments_count))
+                            except:
+                                pass
+                        
+                        if "Images:" in line:
+                            try:
+                                images_count = int(line.split("Images:")[-1].strip().split()[0])
+                                images_metric.metric("🖼️ Images", str(images_count))
+                            except:
+                                pass
+                        
+                        if "Videos:" in line:
+                            try:
+                                videos_count = int(line.split("Videos:")[-1].strip().split()[0])
+                                videos_metric.metric("🎬 Videos", str(videos_count))
+                            except:
+                                pass
+                        
+                        # Update status
+                        elapsed = time.time() - start_time
+                        rate = posts_count / elapsed if elapsed > 0 else 0
+                        status_container.info(f"⏱️ Running for {elapsed:.0f}s | Rate: {rate:.1f} posts/sec")
+                        
+                        # Keep last 15 lines for display
+                        display_text = ''.join(output_lines[-15:])
+                        output_container.code(display_text, language="text")
                     
                     process.wait()
+                    elapsed = time.time() - start_time
                     progress_bar.progress(1.0)
                     
                     if process.returncode == 0:
-                        st.success("✅ Scraping completed! Refresh the page to see new data.")
+                        status_container.success(f"✅ Completed in {elapsed:.0f}s!")
                         st.balloons()
                     else:
-                        st.error(f"❌ Scraping failed with code {process.returncode}")
+                        status_container.error(f"❌ Failed with code {process.returncode}")
+                        # Show full error output
+                        st.code(''.join(output_lines[-30:]), language="text")
                         
                 except Exception as e:
                     st.error(f"Error running scraper: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
         
         st.divider()
         
