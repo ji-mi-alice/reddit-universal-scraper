@@ -309,190 +309,154 @@ def main():
     with tab5:
         st.header("⚙️ Scraper Controls")
         
-        st.subheader("🚀 Start New Scrape")
+        # Persistence logic
+        import json
+        import signal
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            new_sub = st.text_input("Subreddit/User name", placeholder="e.g. python")
-            is_user = st.checkbox("Is a User (not subreddit)")
-        
-        with col2:
-            limit = st.number_input("Post Limit", min_value=10, max_value=5000, value=100)
-            mode = st.selectbox("Mode", ['full', 'history'])
-        
-        no_media = st.checkbox("Skip media download")
-        no_comments = st.checkbox("Skip comments")
-        
-        if st.button("🚀 Start Scraping"):
-            if not new_sub:
-                st.error("Please enter a subreddit/user name!")
-            else:
-                # Build command
-                cmd = ["python", "main.py", new_sub, "--mode", mode, "--limit", str(limit)]
-                if is_user:
-                    cmd.append("--user")
-                if no_media:
-                    cmd.append("--no-media")
-                if no_comments:
-                    cmd.append("--no-comments")
-                
-                st.info(f"Running: {' '.join(cmd)}")
-                
-                # Run the scraper
-                import subprocess
-                import time
-                
-                # Create status displays
-                status_container = st.empty()
-                
-                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-                posts_metric = col_m1.empty()
-                comments_metric = col_m2.empty()
-                images_metric = col_m3.empty()
-                videos_metric = col_m4.empty()
-                
-                progress_bar = st.progress(0)
-                output_container = st.empty()
-                
-                # Initialize metrics
-                posts_metric.metric("📊 Posts", "0")
-                comments_metric.metric("💬 Comments", "0")
-                images_metric.metric("🖼️ Images", "0")
-                videos_metric.metric("🎬 Videos", "0")
-                
+        JOB_FILE = Path("active_job.json")
+        LOG_DIR = Path("logs")
+        LOG_DIR.mkdir(exist_ok=True)
+
+        def get_active_job():
+            if JOB_FILE.exists():
                 try:
+                    with open(JOB_FILE, "r") as f:
+                        return json.load(f)
+                except:
+                    return None
+            return None
+
+        # Check for active job
+        active_job = get_active_job()
+        
+        # Monitor Section (Always visible if job exists)
+        if active_job:
+            st.info(f"🔄 **Scraping in Progress**: {active_job.get('target', 'Unknown')} (PID: {active_job.get('pid')})")
+            
+            # Stop button
+            if st.button("🛑 Stop Scraping"):
+                try:
+                    os.kill(active_job['pid'], signal.SIGTERM)
+                    st.warning("Stopped process.")
+                except:
+                    st.warning("Process already stopped.")
+                
+                if JOB_FILE.exists():
+                    JOB_FILE.unlink()
+                st.rerun()
+            
+            # Read logs
+            log_file = Path(active_job['log_file'])
+            if log_file.exists():
+                with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                
+                # Parse metrics from lines
+                posts_count = 0
+                comments_count = 0
+                images_count = 0
+                videos_count = 0
+                
+                for line in lines:
+                    import re
+                    # Progress: X/Y
+                    m = re.search(r'Progress: (\d+)/(\d+)', line)
+                    if m: posts_count = int(m.group(1))
+                    
+                    # Saved X posts
+                    m = re.search(r'Saved (\d+)', line)
+                    if m: posts_count += int(m.group(1))
+                    
+                    # Comments: X
+                    m = re.search(r'Comments:\s*(\d+)', line)
+                    if m: comments_count = int(m.group(1))
+                    if "Fetching comments for:" in line: comments_count += 1
+                    
+                    # Images/Videos
+                    m = re.search(r'Images:\s*(\d+)', line)
+                    if m: images_count = int(m.group(1))
+                    m = re.search(r'Videos:\s*(\d+)', line)
+                    if m: videos_count = int(m.group(1))
+
+                # Display Metrics
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("📊 Posts", posts_count)
+                col2.metric("💬 Comments", comments_count)
+                col3.metric("🖼️ Images", images_count)
+                col4.metric("🎬 Videos", videos_count)
+                
+                # Show latest logs
+                st.code("".join(lines[-20:]), language="text")
+                
+                # Auto-refresh
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.warning("Log file not found.")
+                
+        else:
+            # Start New Scrape UI
+            st.subheader("🚀 Start New Scrape")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                new_sub = st.text_input("Subreddit/User name", placeholder="e.g. python")
+                is_user = st.checkbox("Is a User (not subreddit)")
+            
+            with col2:
+                limit = st.number_input("Post Limit", min_value=10, max_value=5000, value=100)
+                mode = st.selectbox("Mode", ['full', 'history'])
+            
+            no_media = st.checkbox("Skip media download")
+            no_comments = st.checkbox("Skip comments")
+            
+            if st.button("🚀 Start Scraping"):
+                if not new_sub:
+                    st.error("Please enter a subreddit/user name!")
+                else:
+                    target_cmd = ["python", "-u", "main.py", new_sub, "--mode", mode, "--limit", str(limit)]
+                    if is_user: target_cmd.append("--user")
+                    if no_media: target_cmd.append("--no-media")
+                    if no_comments: target_cmd.append("--no-comments")
+                    
+                    # Start background process
+                    import subprocess
                     import os
-                    env = os.environ.copy()
-                    env['PYTHONIOENCODING'] = 'utf-8'
-                    env['PYTHONUNBUFFERED'] = '1'  # Force unbuffered output
                     
-                    # Use -u flag for unbuffered Python output
-                    cmd_with_unbuffered = ["python", "-u"] + cmd[1:]  # Replace python with python -u
+                    job_id = f"job_{int(time.time())}"
+                    log_file = LOG_DIR / f"{job_id}.log"
                     
-                    process = subprocess.Popen(
-                        cmd_with_unbuffered,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        bufsize=0,  # Unbuffered
-                        cwd=str(Path(__file__).parent.parent),
-                        env=env
-                    )
-                    
-                    output_lines = []
-                    start_time = time.time()
-                    posts_count = 0
-                    comments_count = 0
-                    images_count = 0
-                    videos_count = 0
-                    
-                    for raw_line in iter(process.stdout.readline, b''):
-                        if not raw_line:
-                            break
-                        # Decode binary to text
-                        line = raw_line.decode('utf-8', errors='replace')
-                        output_lines.append(line)
+                    try:
+                        with open(log_file, "w", encoding="utf-8") as f:
+                            env = os.environ.copy()
+                            env['PYTHONIOENCODING'] = 'utf-8'
+                            env['PYTHONUNBUFFERED'] = '1'
+                            
+                            process = subprocess.Popen(
+                                target_cmd,
+                                stdout=f,
+                                stderr=subprocess.STDOUT,
+                                cwd=str(Path(__file__).parent.parent),
+                                env=env
+                            )
                         
-                        # Parse metrics from output
-                        # Match: 📊 Progress: 5/100 posts OR Progress: 5/100
-                        if "Progress:" in line and "/" in line:
-                            try:
-                                # Extract numbers around the /
-                                import re
-                                match = re.search(r'(\d+)\s*/\s*(\d+)', line)
-                                if match:
-                                    posts_count = int(match.group(1))
-                                    total = int(match.group(2))
-                                    progress_bar.progress(min(posts_count / total, 1.0))
-                                    posts_metric.metric("📊 Posts", f"{posts_count}/{total}")
-                            except:
-                                pass
+                        # Save job state
+                        job_info = {
+                            "job_id": job_id,
+                            "pid": process.pid,
+                            "target": new_sub,
+                            "log_file": str(log_file.absolute()),
+                            "start_time": time.time()
+                        }
                         
-                        # Match: Saved X new posts
-                        if "Saved" in line and "posts" in line:
-                            try:
-                                import re
-                                match = re.search(r'Saved (\d+)', line)
-                                if match:
-                                    posts_count += int(match.group(1))
-                                    posts_metric.metric("📊 Posts", str(posts_count))
-                            except:
-                                pass
+                        with open(JOB_FILE, "w") as f:
+                            json.dump(job_info, f)
+                            
+                        st.success(f"Started job {job_id}!")
+                        st.rerun()
                         
-                        # Match: 💬 Comments: X OR Comments: X
-                        if "Comments:" in line:
-                            try:
-                                import re
-                                match = re.search(r'Comments:\s*(\d+)', line)
-                                if match:
-                                    comments_count = int(match.group(1))
-                                    comments_metric.metric("💬 Comments", str(comments_count))
-                            except:
-                                pass
-                        
-                        # Count comment fetching lines
-                        if "Fetching comments for:" in line:
-                            comments_count += 1
-                            comments_metric.metric("💬 Comments", f"~{comments_count}")
-                        
-                        # Match: 🖼️  Images: X OR Images: X
-                        if "Images:" in line:
-                            try:
-                                import re
-                                match = re.search(r'Images:\s*(\d+)', line)
-                                if match:
-                                    images_count = int(match.group(1))
-                                    images_metric.metric("🖼️ Images", str(images_count))
-                            except:
-                                pass
-                        
-                        # Match: 🎬 Videos: X OR Videos: X
-                        if "Videos:" in line:
-                            try:
-                                import re
-                                match = re.search(r'Videos:\s*(\d+)', line)
-                                if match:
-                                    videos_count = int(match.group(1))
-                                    videos_metric.metric("🎬 Videos", str(videos_count))
-                            except:
-                                pass
-                        
-                        # Match: Found X posts in this batch
-                        if "Found" in line and "posts" in line:
-                            try:
-                                import re
-                                match = re.search(r'Found (\d+) posts', line)
-                                if match:
-                                    batch = int(match.group(1))
-                                    status_container.info(f"⏱️ Found {batch} posts in batch...")
-                            except:
-                                pass
-                        
-                        # Update status
-                        elapsed = time.time() - start_time
-                        rate = posts_count / elapsed if elapsed > 0 else 0
-                        status_container.info(f"⏱️ Running for {elapsed:.0f}s | Rate: {rate:.1f} posts/sec")
-                        
-                        # Keep last 15 lines for display
-                        display_text = ''.join(output_lines[-15:])
-                        output_container.code(display_text, language="text")
-                    
-                    process.wait()
-                    elapsed = time.time() - start_time
-                    progress_bar.progress(1.0)
-                    
-                    if process.returncode == 0:
-                        status_container.success(f"✅ Completed in {elapsed:.0f}s!")
-                        st.balloons()
-                    else:
-                        status_container.error(f"❌ Failed with code {process.returncode}")
-                        # Show full error output
-                        st.code(''.join(output_lines[-30:]), language="text")
-                        
-                except Exception as e:
-                    st.error(f"Error running scraper: {e}")
-                    import traceback
-                    st.code(traceback.format_exc())
+                    except Exception as e:
+                        st.error(f"Failed to start: {e}")
         
         st.divider()
         
