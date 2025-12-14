@@ -9,6 +9,7 @@ WORKDIR /app
 # Install system dependencies (for some Python packages)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
