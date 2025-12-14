@@ -394,36 +394,77 @@ def main():
                         output_lines.append(line)
                         
                         # Parse metrics from output
-                        if "Progress:" in line:
+                        # Match: 📊 Progress: 5/100 posts OR Progress: 5/100
+                        if "Progress:" in line and "/" in line:
                             try:
-                                parts = line.split("/")
-                                posts_count = int(parts[0].split()[-1])
-                                total = int(parts[1].split()[0])
-                                progress_bar.progress(min(posts_count / total, 1.0))
-                                posts_metric.metric("📊 Posts", f"{posts_count}/{total}")
+                                # Extract numbers around the /
+                                import re
+                                match = re.search(r'(\d+)\s*/\s*(\d+)', line)
+                                if match:
+                                    posts_count = int(match.group(1))
+                                    total = int(match.group(2))
+                                    progress_bar.progress(min(posts_count / total, 1.0))
+                                    posts_metric.metric("📊 Posts", f"{posts_count}/{total}")
                             except:
                                 pass
                         
+                        # Match: Saved X new posts
+                        if "Saved" in line and "posts" in line:
+                            try:
+                                import re
+                                match = re.search(r'Saved (\d+)', line)
+                                if match:
+                                    posts_count += int(match.group(1))
+                                    posts_metric.metric("📊 Posts", str(posts_count))
+                            except:
+                                pass
+                        
+                        # Match: 💬 Comments: X OR Comments: X
                         if "Comments:" in line:
                             try:
-                                comments_count = int(line.split("Comments:")[-1].strip().split()[0])
-                                comments_metric.metric("💬 Comments", str(comments_count))
+                                import re
+                                match = re.search(r'Comments:\s*(\d+)', line)
+                                if match:
+                                    comments_count = int(match.group(1))
+                                    comments_metric.metric("💬 Comments", str(comments_count))
                             except:
                                 pass
                         
+                        # Count comment fetching lines
+                        if "Fetching comments for:" in line:
+                            comments_count += 1
+                            comments_metric.metric("💬 Comments", f"~{comments_count}")
+                        
+                        # Match: 🖼️  Images: X OR Images: X
                         if "Images:" in line:
                             try:
-                                images_count = int(line.split("Images:")[-1].strip().split()[0])
-                                images_metric.metric("🖼️ Images", str(images_count))
+                                import re
+                                match = re.search(r'Images:\s*(\d+)', line)
+                                if match:
+                                    images_count = int(match.group(1))
+                                    images_metric.metric("🖼️ Images", str(images_count))
                             except:
                                 pass
                         
+                        # Match: 🎬 Videos: X OR Videos: X
                         if "Videos:" in line:
                             try:
-                                videos_count = int(line.split("Videos:")[-1].strip().split()[0])
-                                videos_metric.metric("🎬 Videos", str(videos_count))
+                                import re
+                                match = re.search(r'Videos:\s*(\d+)', line)
+                                if match:
+                                    videos_count = int(match.group(1))
+                                    videos_metric.metric("🎬 Videos", str(videos_count))
                             except:
                                 pass
+                        
+                        # Match: Found X posts in this batch
+                        if "Found" in line and "posts" in line:
+                            try:
+                                import re
+                                match = re.search(r'Found (\d+) posts', line)
+                                if match:
+                                    batch = int(match.group(1))
+                                    status_container.info(f"⏱️ Found {batch} posts in batch...")
                         
                         # Update status
                         elapsed = time.time() - start_time
