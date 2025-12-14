@@ -346,13 +346,20 @@ def main():
                 progress_bar = st.progress(0)
                 
                 try:
+                    import os
+                    env = os.environ.copy()
+                    env['PYTHONIOENCODING'] = 'utf-8'
+                    
                     process = subprocess.Popen(
                         cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         text=True,
                         bufsize=1,
-                        cwd=str(Path(__file__).parent.parent)
+                        cwd=str(Path(__file__).parent.parent),
+                        env=env,
+                        encoding='utf-8',
+                        errors='replace'
                     )
                     
                     output_lines = []
