@@ -465,6 +465,8 @@ def main():
                                 if match:
                                     batch = int(match.group(1))
                                     status_container.info(f"⏱️ Found {batch} posts in batch...")
+                            except:
+                                pass
                         
                         # Update status
                         elapsed = time.time() - start_time
