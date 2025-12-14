@@ -524,17 +524,37 @@ def main():
         # REST API Section
         st.subheader("🚀 REST API")
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
-            st.markdown("""
-            **Start the API server:**
-            ```bash
-            python main.py --api
-            ```
-            """)
-        with col2:
             api_port = st.number_input("API Port", value=8000, min_value=1000, max_value=65535)
-            st.code(f"http://localhost:{api_port}/docs")
+        
+        with col2:
+            if st.button("🚀 Start API Server"):
+                st.info("Starting API server in background...")
+                import subprocess
+                try:
+                    # Start API in background (non-blocking)
+                    subprocess.Popen(
+                        ["python", "main.py", "--api"],
+                        cwd=str(Path(__file__).parent.parent),
+                        creationflags=subprocess.CREATE_NEW_CONSOLE if hasattr(subprocess, 'CREATE_NEW_CONSOLE') else 0
+                    )
+                    st.success(f"✅ API server starting on port {api_port}!")
+                    st.markdown(f"**Open:** [http://localhost:{api_port}/docs](http://localhost:{api_port}/docs)")
+                except Exception as e:
+                    st.error(f"❌ Failed to start API: {e}")
+        
+        with col3:
+            # Check if API is running
+            import requests
+            try:
+                resp = requests.get(f"http://localhost:{api_port}/health", timeout=1)
+                if resp.status_code == 200:
+                    st.success("🟢 API is running")
+                else:
+                    st.warning("🟡 API responded but not healthy")
+            except:
+                st.info("🔴 API not running")
         
         st.markdown("""
         **Available Endpoints:**
@@ -612,7 +632,20 @@ def main():
             export_sub = st.selectbox("Select subreddit to export", subreddits, key="parquet_export")
         with col2:
             if st.button("📦 Export to Parquet"):
-                st.info(f"Run: `python main.py --export-parquet {export_sub.replace('r_', '').replace('u_', '')}`")
+                target_name = export_sub.replace('r_', '').replace('u_', '')
+                with st.spinner(f"Exporting {target_name} to Parquet..."):
+                    import subprocess
+                    result = subprocess.run(
+                        ["python", "main.py", "--export-parquet", target_name],
+                        capture_output=True,
+                        text=True,
+                        cwd=str(Path(__file__).parent.parent)
+                    )
+                    if result.returncode == 0:
+                        st.success(f"✅ Exported {target_name} to Parquet!")
+                        st.code(result.stdout[-500:] if len(result.stdout) > 500 else result.stdout)
+                    else:
+                        st.error(f"❌ Export failed: {result.stderr}")
         
         # List existing parquet files
         parquet_dir = Path("data/parquet")
@@ -633,11 +666,35 @@ def main():
         
         with col1:
             if st.button("💾 Backup Database"):
-                st.info("Run: `python main.py --backup`")
+                with st.spinner("Creating backup..."):
+                    import subprocess
+                    result = subprocess.run(
+                        ["python", "main.py", "--backup"],
+                        capture_output=True,
+                        text=True,
+                        cwd=str(Path(__file__).parent.parent)
+                    )
+                    if result.returncode == 0:
+                        st.success("✅ Database backed up!")
+                        st.code(result.stdout[-300:] if len(result.stdout) > 300 else result.stdout)
+                    else:
+                        st.error(f"❌ Backup failed: {result.stderr}")
         
         with col2:
             if st.button("🧹 Vacuum/Optimize"):
-                st.info("Run: `python main.py --vacuum`")
+                with st.spinner("Optimizing database..."):
+                    import subprocess
+                    result = subprocess.run(
+                        ["python", "main.py", "--vacuum"],
+                        capture_output=True,
+                        text=True,
+                        cwd=str(Path(__file__).parent.parent)
+                    )
+                    if result.returncode == 0:
+                        st.success("✅ Database optimized!")
+                        st.code(result.stdout[-300:] if len(result.stdout) > 300 else result.stdout)
+                    else:
+                        st.error(f"❌ Vacuum failed: {result.stderr}")
         
         with col3:
             try:
