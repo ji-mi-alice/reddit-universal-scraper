@@ -12,6 +12,8 @@ import argparse
 import random
 import sys
 import json
+import subprocess
+import tempfile
 from urllib.parse import urlparse
 from pathlib import Path
 
@@ -166,6 +168,97 @@ def download_media(url, save_path, media_type="image"):
         pass
     return False
 
+def download_reddit_video_with_audio(video_url, save_path):
+    """
+    Downloads Reddit video with audio by fetching both streams and merging.
+    Reddit stores video and audio separately - this combines them.
+    """
+    try:
+        if os.path.exists(save_path):
+            return True
+        
+        # Try to find the audio URL by replacing video quality with audio
+        # Reddit videos have audio at URLs like .../DASH_audio.mp4 or .../DASH_AUDIO_128.mp4
+        base_url = video_url.rsplit('/', 1)[0]
+        
+        # Common audio URL patterns
+        audio_urls = [
+            f"{base_url}/DASH_audio.mp4",
+            f"{base_url}/DASH_AUDIO_128.mp4",
+            f"{base_url}/DASH_AUDIO_64.mp4",
+            f"{base_url}/audio.mp4",
+            f"{base_url}/audio"
+        ]
+        
+        # Download video to temp file first
+        with tempfile.NamedTemporaryFile(suffix='_video.mp4', delete=False) as video_temp:
+            video_temp_path = video_temp.name
+            response = SESSION.get(video_url, timeout=60, stream=True)
+            if response.status_code != 200:
+                return False
+            for chunk in response.iter_content(chunk_size=8192):
+                video_temp.write(chunk)
+        
+        # Try to download audio
+        audio_temp_path = None
+        for audio_url in audio_urls:
+            try:
+                response = SESSION.get(audio_url, timeout=30, stream=True)
+                if response.status_code == 200:
+                    with tempfile.NamedTemporaryFile(suffix='_audio.mp4', delete=False) as audio_temp:
+                        audio_temp_path = audio_temp.name
+                        for chunk in response.iter_content(chunk_size=8192):
+                            audio_temp.write(chunk)
+                    break
+            except:
+                continue
+        
+        if audio_temp_path:
+            # Merge video and audio using ffmpeg
+            try:
+                cmd = [
+                    'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+                    '-i', video_temp_path,
+                    '-i', audio_temp_path,
+                    '-c:v', 'copy', '-c:a', 'aac',
+                    '-shortest', save_path
+                ]
+                result = subprocess.run(cmd, capture_output=True, timeout=120)
+                
+                if result.returncode == 0:
+                    # Cleanup temp files
+                    os.unlink(video_temp_path)
+                    os.unlink(audio_temp_path)
+                    return True
+                else:
+                    # ffmpeg failed, fall back to video only
+                    print(f"   ⚠️ ffmpeg merge failed, saving video without audio")
+                    os.rename(video_temp_path, save_path)
+                    os.unlink(audio_temp_path)
+                    return True
+            except FileNotFoundError:
+                # ffmpeg not installed, save video only
+                print(f"   ⚠️ ffmpeg not found, saving video without audio")
+                os.rename(video_temp_path, save_path)
+                if audio_temp_path:
+                    os.unlink(audio_temp_path)
+                return True
+            except Exception as e:
+                # Other error, save video only
+                os.rename(video_temp_path, save_path)
+                if audio_temp_path and os.path.exists(audio_temp_path):
+                    os.unlink(audio_temp_path)
+                return True
+        else:
+            # No audio found, just use video
+            os.rename(video_temp_path, save_path)
+            return True
+            
+    except Exception as e:
+        # Cleanup any temp files on error
+        pass
+    return False
+
 def download_post_media(post_data, dirs, post_id):
     """Downloads all media from a post."""
     media = get_media_urls(post_data)
@@ -187,7 +280,11 @@ def download_post_media(post_data, dirs, post_id):
         if 'youtube' not in vid_url:
             ext = '.mp4'
             save_path = os.path.join(dirs["videos"], f"{post_id}_{i}{ext}")
-            if download_media(vid_url, save_path, "video"):
+            # Use enhanced download for Reddit videos (includes audio)
+            if 'v.redd.it' in vid_url or 'reddit.com' in vid_url:
+                if download_reddit_video_with_audio(vid_url, save_path):
+                    downloaded["videos"] += 1
+            elif download_media(vid_url, save_path, "video"):
                 downloaded["videos"] += 1
     
     return downloaded
@@ -354,7 +451,9 @@ def run_full_history(target, limit, is_user=False, download_media_flag=True,
                     else:
                         path = f"/r/{target}/new.json"
                     
-                    target_url = f"{base_url}{path}?limit=100&raw_json=1"
+                    # Use proper batch size - min of remaining posts needed or 100 (Reddit's max per request)
+                    batch_size = min(100, limit - total_posts)
+                    target_url = f"{base_url}{path}?limit={batch_size}&raw_json=1"
                     if after:
                         target_url += f"&after={after}"
                     

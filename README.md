@@ -38,6 +38,22 @@ python main.py --dashboard
 # Opens at http://localhost:8501
 ```
 
+### 📋 Requirements
+
+- **Python 3.8+**
+- **ffmpeg** (optional, for video with audio)
+
+```bash
+# Windows (via chocolatey)
+choco install ffmpeg
+
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt install ffmpeg
+```
+
 ---
 
 ## 📖 All Commands

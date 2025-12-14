@@ -15,6 +15,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import USER_AGENT, MIRRORS, ASYNC_MAX_CONCURRENT, ASYNC_BATCH_SIZE
+import subprocess
+import tempfile
 
 # Semaphore to limit concurrent requests
 semaphore = None
@@ -33,14 +35,14 @@ async def fetch_json(session, url, retries=3):
                 await asyncio.sleep(2)
     return None
 
-async def fetch_posts_page(session, base_url, target, after=None, is_user=False):
+async def fetch_posts_page(session, base_url, target, after=None, is_user=False, batch_size=100):
     """Fetch a single page of posts."""
     if is_user:
         path = f"/user/{target}/submitted.json"
     else:
         path = f"/r/{target}/new.json"
     
-    url = f"{base_url}{path}?limit=100&raw_json=1"
+    url = f"{base_url}{path}?limit={batch_size}&raw_json=1"
     if after:
         url += f"&after={after}"
     
@@ -62,6 +64,107 @@ async def download_media_async(session, url, save_path):
                             await f.write(chunk)
                     return True
         except:
+            pass
+    return False
+
+async def download_reddit_video_with_audio_async(session, video_url, save_path):
+    """
+    Downloads Reddit video with audio asynchronously.
+    Reddit stores video and audio separately - this combines them using ffmpeg.
+    """
+    global semaphore
+    
+    if os.path.exists(save_path):
+        return True
+    
+    async with semaphore:
+        try:
+            # Find audio URL by replacing video quality with audio
+            base_url = video_url.rsplit('/', 1)[0]
+            audio_urls = [
+                f"{base_url}/DASH_audio.mp4",
+                f"{base_url}/DASH_AUDIO_128.mp4",
+                f"{base_url}/DASH_AUDIO_64.mp4",
+                f"{base_url}/audio.mp4",
+                f"{base_url}/audio"
+            ]
+            
+            # Download video to temp file
+            video_temp = tempfile.NamedTemporaryFile(suffix='_video.mp4', delete=False)
+            video_temp_path = video_temp.name
+            video_temp.close()
+            
+            try:
+                async with session.get(video_url, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                    if response.status != 200:
+                        return False
+                    async with aiofiles.open(video_temp_path, 'wb') as f:
+                        async for chunk in response.content.iter_chunked(8192):
+                            await f.write(chunk)
+            except:
+                if os.path.exists(video_temp_path):
+                    os.unlink(video_temp_path)
+                return False
+            
+            # Try to download audio
+            audio_temp_path = None
+            for audio_url in audio_urls:
+                try:
+                    async with session.get(audio_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                        if response.status == 200:
+                            audio_temp = tempfile.NamedTemporaryFile(suffix='_audio.mp4', delete=False)
+                            audio_temp_path = audio_temp.name
+                            audio_temp.close()
+                            async with aiofiles.open(audio_temp_path, 'wb') as f:
+                                async for chunk in response.content.iter_chunked(8192):
+                                    await f.write(chunk)
+                            break
+                except:
+                    continue
+            
+            if audio_temp_path:
+                # Merge video and audio using ffmpeg
+                try:
+                    cmd = [
+                        'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+                        '-i', video_temp_path,
+                        '-i', audio_temp_path,
+                        '-c:v', 'copy', '-c:a', 'aac',
+                        '-shortest', save_path
+                    ]
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    await asyncio.wait_for(proc.wait(), timeout=120)
+                    
+                    if proc.returncode == 0:
+                        os.unlink(video_temp_path)
+                        os.unlink(audio_temp_path)
+                        return True
+                    else:
+                        # ffmpeg failed, use video only
+                        os.rename(video_temp_path, save_path)
+                        os.unlink(audio_temp_path)
+                        return True
+                except FileNotFoundError:
+                    # ffmpeg not installed
+                    os.rename(video_temp_path, save_path)
+                    if audio_temp_path and os.path.exists(audio_temp_path):
+                        os.unlink(audio_temp_path)
+                    return True
+                except Exception:
+                    os.rename(video_temp_path, save_path)
+                    if audio_temp_path and os.path.exists(audio_temp_path):
+                        os.unlink(audio_temp_path)
+                    return True
+            else:
+                # No audio found, just use video
+                os.rename(video_temp_path, save_path)
+                return True
+                
+        except Exception:
             pass
     return False
 
@@ -242,7 +345,9 @@ async def scrape_async(target, limit=100, is_user=False, download_media=True, sc
             
             data = None
             for mirror in mirrors:
-                data = await fetch_posts_page(session, mirror, target, after, is_user)
+                # Use proper batch size
+                batch_size = min(100, limit - total_fetched)
+                data = await fetch_posts_page(session, mirror, target, after, is_user, batch_size)
                 if data:
                     print(f"✅ Fetched from {mirror}")
                     break
@@ -288,7 +393,11 @@ async def scrape_async(target, limit=100, is_user=False, download_media=True, sc
                     for i, vid_url in enumerate(media['videos'][:2]):
                         if 'youtube' not in vid_url:
                             save_path = f"{videos_dir}/{post['id']}_{i}.mp4"
-                            media_tasks.append(download_media_async(session, vid_url, save_path))
+                            # Use enhanced download for Reddit videos (includes audio)
+                            if 'v.redd.it' in vid_url or 'reddit.com' in vid_url:
+                                media_tasks.append(download_reddit_video_with_audio_async(session, vid_url, save_path))
+                            else:
+                                media_tasks.append(download_media_async(session, vid_url, save_path))
                 
                 # Queue comment fetching
                 if scrape_comments and post['num_comments'] > 0:
